@@ -1,9 +1,9 @@
 #include <opencv\cv.h>
 #include <opencv\highgui.h>
 
-#define THRESHOLD_UNDER 80
+#define THRESHOLD_UNDER 0
 #define THRESHOLD_UPPER 256
-#define MORPH_SIZE 5;
+#define MORPH_SIZE 10;
 
 using namespace cv;
 int *label;
@@ -73,12 +73,16 @@ void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 			int green = src.at<Vec3b>(i, j)[1];
 			int red = src.at<Vec3b>(i, j)[2];
 
-			if (tophatImage.at<uchar>(i,j) > 50)
+			if (tophatImage.at<uchar>(i,j) > 100)
 			{
-				if (calcDistance(blue, green, red, 0, 255, 0) < 255 || calcDistance(blue, green, red, 0, 0, 255) < 255 || calcDistance(blue, green, red, 0, 255, 255) < 255)
+				if (calcDistance(blue, green, red, 100, 220, 255) < 80 || calcDistance(blue, green, red, 150, 200, 70) < 80 || calcDistance(blue, green, red, 110, 110, 245) < 80)
 				{
 					dst.at<uchar>(i, j) = 255;
 				}
+			}
+			else
+			{
+				dst.at<uchar>(i, j) = 0;
 			}
 
 		}
@@ -101,7 +105,8 @@ void main(void)
 
 	/* White Top Hat */
 	morphologyEx(grayScaleImage, topHatImage, CV_MOP_TOPHAT, element);
-	//makeWhite(topHatImage, image, topHatImage);
+	makeWhite(topHatImage, image, topHatImage);
+
 
 	/* Thresholding */
 	threshold(topHatImage, thresholdedImage, THRESHOLD_UNDER, THRESHOLD_UPPER, CV_THRESH_BINARY);
