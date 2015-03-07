@@ -331,7 +331,7 @@ void main(void)
 	checkArea(object, thresholdedImage);
 
 	/* Second Filter(Region Growing */
-	regionGrowing(object,thresholdedImage,grayScaleImage);
+	//regionGrowing(object,thresholdedImage,grayScaleImage);
 
 	/* Final Filter(Is Background Black?) */
 	checkSurround(object, image);
