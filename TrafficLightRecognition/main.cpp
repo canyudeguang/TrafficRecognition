@@ -3,29 +3,25 @@
 
 using namespace cv;
 
-#define THRESHOLD_UNDER 150
+#define THRESHOLD_UNDER 100
 #define THRESHOLD_UPPER 256
 #define MORPH_SIZE 3	//Top-Hat Kernel Size
-#define CLOSING_SIZE 1	//Closing Size
-#define DISTANCE_WITH_LIGHT 80
-#define DISTANCE_WITH_BACKGROUND 110
+#define DISTANCE_WITH_LIGHT 50
 
 /*///////////////////////////////////////////////////////////////////////////////////////////*/
-/* Morphology Setting */
+					/* Morphology Setting */
 
 int morph_size = MORPH_SIZE;
 Mat element_tophat = getStructuringElement(MORPH_RECT, Size(2 * morph_size + 1, 2 * morph_size + 1), Point(morph_size, morph_size));
 
-int closing_size = CLOSING_SIZE;
-Mat element_close = getStructuringElement(MORPH_RECT, Size(2 * closing_size + 1, 2 * closing_size + 1), Point(closing_size, closing_size));
 /*///////////////////////////////////////////////////////////////////////////////////////////*/
 
 
 
 /*///////////////////////////////////////////////////////////////////////////////////////////*/
-/* Labeling Setting */
+					/* Labeling Setting */
 
-int *label;	//Labeling
+int *label;
 int labelWidth;
 int labelHeight;
 int objectN = 0;
@@ -48,6 +44,13 @@ const int dx[] = { +1, 0, -1, 0 };
 const int dy[] = { 0, +1, 0, -1 };
 /*///////////////////////////////////////////////////////////////////////////////////////////*/
 
+
+
+/* 색깔끼리의 거리(유사도)를 체크하는 함수(유클리드 Norm사용) */
+double calcDistance(int b1, int g1, int r1, int b2, int g2, int r2)
+{
+	return sqrt((b1 - b2)*(b1 - b2) + (g1 - g2)*(g1 - g2) + (r1 - r2)*(r1 - r2));
+}
 
 /* recursive로 구현된 Labeing함수 */
 void labeling(int x, int y,int current_label, Mat& sourceImage) {
@@ -75,7 +78,7 @@ void labeling(int x, int y,int current_label, Mat& sourceImage) {
 }
 
 /* Object를 Reject하기위해 넓이와 높이 계산하는 함수 */
-void checkArea(Object object[], Mat& src)
+void checkArea(Object object[], Mat& src, Mat& original)
 {
 	for (int i = labelWidth / 10-1; i < labelWidth / 10 * 9+1; i++)
 	{
@@ -124,7 +127,7 @@ void checkArea(Object object[], Mat& src)
 	{
 		object[k].centerX /= object[k].count;
 		object[k].centerY /= object[k].count;
-
+		
 		if (object[k].width > 10)
 		{
 			if (object[k].width * 10 / 7 < object[k].height || object[k].height * 10 / 7 < object[k].width)
@@ -162,7 +165,6 @@ void checkArea(Object object[], Mat& src)
 	}
 }
 
-
 /* Lebeing 시작하는 함수 */
 int find_components(Mat& sourceImage) {
 	int component = 0;
@@ -179,12 +181,6 @@ int find_components(Mat& sourceImage) {
 	}
 
 	return component;
-}
-
-/* 색깔끼리의 거리(유사도)를 체크하는 함수(유클리드 Norm사용) */
-double calcDistance(int b1,int g1,int r1,int b2,int g2, int r2)
-{
-	return sqrt((b1 - b2)*(b1 - b2) + (g1 - g2)*(g1 - g2) + (r1 - r2)*(r1 - r2));
 }
 
 /* 화면 바깥쪽의 잡티를 제거하고 신호등이 될수있는 색을 밝게 해주는 함수 */
@@ -211,33 +207,35 @@ void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 			int red = src.at<Vec3b>(i, j)[2];
 
 			double distanceYello = calcDistance(blue, green, red, 100, 220, 255);
-			double distanceGreen = calcDistance(blue, green, red, 150, 200, 70);
-			double distanceRed = calcDistance(blue, green, red, 110, 110, 245);
-
+			double distanceGreen = calcDistance(blue, green, red, 143, 250, 77);
+			double distanceRed = calcDistance(blue, green, red, 250, 190, 76);
+			
 			if (tophatImage.at<uchar>(i,j) > 30)
 			{
-
 				if (distanceYello < DISTANCE_WITH_LIGHT || distanceGreen < DISTANCE_WITH_LIGHT || distanceRed < DISTANCE_WITH_LIGHT)
 				{
 					dst.at<uchar>(i, j) = 255;
 				}
-				else if (distanceYello < DISTANCE_WITH_LIGHT + 20 || distanceGreen < DISTANCE_WITH_LIGHT + 20 || distanceRed < DISTANCE_WITH_LIGHT + 20)
+				else if (distanceYello < DISTANCE_WITH_LIGHT + 25 || distanceGreen < DISTANCE_WITH_LIGHT + 25 || distanceRed < DISTANCE_WITH_LIGHT + 25)
+				{
+					dst.at<uchar>(i, j) += 80;
+				}
+				else if (distanceYello < DISTANCE_WITH_LIGHT + 50 || distanceGreen < DISTANCE_WITH_LIGHT + 50 || distanceRed < DISTANCE_WITH_LIGHT + 50)
 				{
 					dst.at<uchar>(i, j) += 50;
 				}
-
-				if (distanceYello > DISTANCE_WITH_BACKGROUND && distanceGreen > DISTANCE_WITH_BACKGROUND && distanceRed > DISTANCE_WITH_BACKGROUND)
+				else
 				{
 					dst.at<uchar>(i, j) = 0;
 				}
 			}
+			else
+			{
+				dst.at<uchar>(i, j) = 0;
+			}
+
 		}
 	}
-}
-
-void regionGrowing(Object object[], Mat& dst, Mat& src)
-{
-	
 }
 
 void checkSurround(Object object[], Mat& src)
@@ -303,10 +301,11 @@ void checkSurround(Object object[], Mat& src)
 void main(void)
 {
 	/* Setting */
-	Mat image = imread("test1.jpg");
+	Mat image = imread("test3.jpg");
 	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
 	Mat topHatImage(image.rows, image.cols, CV_8UC1);
 	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
+	Mat temp(image.rows, image.cols, CV_8UC1, Scalar(0));
 
 	label = new int[image.cols*image.rows];
 	labelWidth = image.cols;
@@ -328,22 +327,41 @@ void main(void)
 	/* First Filter(Area) */
 	objectN = find_components(thresholdedImage);
 	Object* object = new Object[objectN];
-	checkArea(object, thresholdedImage);
+	checkArea(object, thresholdedImage, image);
+
+	//지워진거 삭제해주는 임시코드
+	/*for (int k = 0; k < objectN; k++)
+	{
+		for (int i = 0; i < image.cols; i++)
+		{
+			for (int j = 0; j < image.rows; j++)
+			{
+				if (!object[k].isDeleted)
+				{
+					if (k + 1 == label[j*image.cols + i])
+					{
+						temp.at<uchar>(j, i) = 255;
+					}
+				}
+			}
+		}
+	}*/
 
 	/* Second Filter(Region Growing */
 	//regionGrowing(object,thresholdedImage,grayScaleImage);
 
 	/* Final Filter(Is Background Black?) */
-	checkSurround(object, image);
+	//checkSurround(object, image);
 
 
 	imshow("image", image);
 	imshow("grayScaleImage", grayScaleImage);
 	imshow("topHatImage", topHatImage);
 	imshow("thresholdedImage", thresholdedImage);
+	imshow("temp", temp);
 	waitKey(0);
 
 	delete[] label;
-	delete[] object;
+	//delete[] object;
 }
 
