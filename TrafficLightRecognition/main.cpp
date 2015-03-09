@@ -6,7 +6,7 @@ using namespace cv;
 #define THRESHOLD_UNDER 100
 #define THRESHOLD_UPPER 256
 #define MORPH_SIZE 3	//Top-Hat Kernel Size
-#define DISTANCE_WITH_LIGHT 50
+#define DISTANCE_WITH_LIGHT 60
 
 /*///////////////////////////////////////////////////////////////////////////////////////////*/
 					/* Morphology Setting */
@@ -128,38 +128,12 @@ void checkArea(Object object[], Mat& src, Mat& original)
 		object[k].centerX /= object[k].count;
 		object[k].centerY /= object[k].count;
 		
-		if (object[k].width > 10)
+		if (object[k].count > 2)
 		{
-			if (object[k].width * 10 / 7 < object[k].height || object[k].height * 10 / 7 < object[k].width)
+			int maxLenght = max(object[k].height, object[k].width);
+			if (!(maxLenght * maxLenght >= object[k].count && 0.5890485 * maxLenght * maxLenght <= object[k].count))
 			{
-				for (int i = 0; i < labelWidth; i++)
-				{
-					for (int j = 0; j< labelHeight; j++)
-					{
-						if (label[j*labelWidth + i] == k + 1)
-						{
-							src.at<uchar>(j, i) = 0;
-							object[k].isDeleted = true;
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-			if (object[k].width * 2 < object[k].height || object[k].height * 2 < object[k].width)
-			{
-				for (int i = 0; i < labelWidth; i++)
-				{
-					for (int j = 0; j< labelHeight; j++)
-					{
-						if (label[j*labelWidth + i] == k + 1)
-						{
-							src.at<uchar>(j, i) = 0;
-							object[k].isDeleted = true;
-						}
-					}
-				}
+				object[k].isDeleted = true;
 			}
 		}
 	}
@@ -210,33 +184,43 @@ void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 			double distanceGreen = calcDistance(blue, green, red, 143, 250, 77);
 			double distanceRed = calcDistance(blue, green, red, 250, 190, 76);
 			
-			if (tophatImage.at<uchar>(i,j) > 30)
+			if (tophatImage.at<uchar>(i, j) > 30)
 			{
 				if (distanceYello < DISTANCE_WITH_LIGHT || distanceGreen < DISTANCE_WITH_LIGHT || distanceRed < DISTANCE_WITH_LIGHT)
 				{
 					dst.at<uchar>(i, j) = 255;
 				}
-				else if (distanceYello < DISTANCE_WITH_LIGHT + 25 || distanceGreen < DISTANCE_WITH_LIGHT + 25 || distanceRed < DISTANCE_WITH_LIGHT + 25)
+				else if (distanceYello < DISTANCE_WITH_LIGHT + 30 || distanceGreen < DISTANCE_WITH_LIGHT + 30 || distanceRed < DISTANCE_WITH_LIGHT + 30)
 				{
 					dst.at<uchar>(i, j) += 80;
 				}
-				else if (distanceYello < DISTANCE_WITH_LIGHT + 50 || distanceGreen < DISTANCE_WITH_LIGHT + 50 || distanceRed < DISTANCE_WITH_LIGHT + 50)
+				else if (distanceYello < DISTANCE_WITH_LIGHT + 60 || distanceGreen < DISTANCE_WITH_LIGHT + 60 || distanceRed < DISTANCE_WITH_LIGHT + 60)
 				{
 					dst.at<uchar>(i, j) += 50;
 				}
-				else
-				{
-					dst.at<uchar>(i, j) = 0;
-				}
-			}
-			else
-			{
-				dst.at<uchar>(i, j) = 0;
 			}
 
 		}
 	}
 }
+
+//
+//void regionGrowing()
+//{
+//
+//}
+//
+//void checkRegion(Object object[],Mat& grayScaleImage)
+//{
+//
+//	for (int k = 0; k < objectN; k++)
+//	{
+//		Mat temp(labelHeight, labelWidth, CV_8UC1, Scalar(0));
+//		regionGrowing();
+//		
+//	}
+//}
+
 
 void checkSurround(Object object[], Mat& src)
 {
@@ -298,10 +282,11 @@ void checkSurround(Object object[], Mat& src)
 	}
 }
 
+
 void main(void)
 {
 	/* Setting */
-	Mat image = imread("test3.jpg");
+	Mat image = imread("test2.jpg");
 	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
 	Mat topHatImage(image.rows, image.cols, CV_8UC1);
 	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
@@ -329,8 +314,9 @@ void main(void)
 	Object* object = new Object[objectN];
 	checkArea(object, thresholdedImage, image);
 
+
 	//지워진거 삭제해주는 임시코드
-	/*for (int k = 0; k < objectN; k++)
+	for (int k = 0; k < objectN; k++)
 	{
 		for (int i = 0; i < image.cols; i++)
 		{
@@ -345,10 +331,10 @@ void main(void)
 				}
 			}
 		}
-	}*/
+	}
 
 	/* Second Filter(Region Growing */
-	//regionGrowing(object,thresholdedImage,grayScaleImage);
+	//checkRegion(object, thresholdedImage, grayScaleImage);
 
 	/* Final Filter(Is Background Black?) */
 	//checkSurround(object, image);
