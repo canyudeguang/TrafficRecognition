@@ -7,7 +7,7 @@ using namespace cv;
 #define THRESHOLD_BOX 70
 #define TOP_HAT_SIZE 3
 #define DISTANCE_WITH_LIGHT 60
-#define DISTANCE_REJECT_CANDIDATE_WITH_COLOR 90
+#define DISTANCE_REJECT_CANDIDATE_WITH_COLOR 100
 
 
 int morph_size = TOP_HAT_SIZE;
@@ -89,12 +89,12 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 				}
 			}
 		}
-		
+
 		for (int k = 0; k < objectN; k++)
 			if(object[k].checking) object[k].checking = false;
 	}
 
-	for (int i = 0; i < labelHeight / 3 * 2; i++)
+	for (int i = 0; i < labelHeight / 3 * 2+1; i++)
 	{
 		for (int j = labelWidth / 10 - 1; j < labelWidth / 10 * 9 + 1; j++)
 		{
@@ -215,65 +215,38 @@ void removeDifferColorCandidate(Mat& image, Object object[])
 	}
 }
 
-
-void checkArea2(Object object[], Mat& src, Mat& original, int label[])
+void checkBoundaryBox(Mat& image, Object object[], Mat& trafficLightTemplate)
 {
-	for (int i = labelWidth / 10 - 1; i < labelWidth / 10 * 9 + 1; i++)
+	Mat tempTemplate = trafficLightTemplate;
+	int histograrm = 0;
+	float scaleWithTemplate;
+	for (int k = 0; k < objectN; k++)
 	{
-		for (int j = 0; j < labelHeight / 3 * 2 + 1; j++)
+		if (!object[k].isDeleted)
 		{
-			if (label[j*labelWidth + i] > 0)
+			histograrm = 0;
+			scaleWithTemplate = (float)object[k].height*1.5 / trafficLightTemplate.rows;
+			resize(trafficLightTemplate, tempTemplate, Size(scaleWithTemplate * trafficLightTemplate.cols, scaleWithTemplate * trafficLightTemplate.rows));
+			imshow("tempWindow",tempTemplate);
+			for (int x = 0, i = object[k].centerX - (object[k].width * 0.75); x < trafficLightTemplate.cols; i++, x++)
 			{
-				object[label[j*labelWidth + i] - 1].count++;
-				object[label[j*labelWidth + i] - 1].centerX += i;
-				object[label[j*labelWidth + i] - 1].centerY += j;
-				if (object[label[j*labelWidth + i] - 1].checking)
-					continue;
-				else
+				if (i < 0) continue;
+				if (i >= image.cols - 1) continue;
+				for (int y = 0, j = object[k].centerY - (object[k].height * 0.75); y < trafficLightTemplate.rows; j++,y++)
 				{
-					object[label[j*labelWidth + i] - 1].width++;
-					object[label[j*labelWidth + i] - 1].checking = true;
+					if (j < 0) continue;
+					if (j >= image.rows - 1) continue;
+					int b1 = image.at<Vec3b>(j, i)[0];
+					int g1 = image.at<Vec3b>(j, i)[1];
+					int r1 = image.at<Vec3b>(j, i)[2];
+					int b2 = trafficLightTemplate.at<Vec3b>(y, x)[0];
+					int g2 = trafficLightTemplate.at<Vec3b>(y, x)[1];
+					int r2 = trafficLightTemplate.at<Vec3b>(y, x)[2];
+					double distance = calcDistance(b1,g1,r1,b2,g2,r2);
+					histograrm += (distance * distance);
 				}
 			}
-		}
-
-		for (int k = 0; k < blackObjectN; k++)
-			if (object[k].checking) object[k].checking = false;
-	}
-
-	for (int i = 0; i < labelHeight / 3 * 2; i++)
-	{
-		for (int j = labelWidth / 10 - 1; j < labelWidth / 10 * 9 + 1; j++)
-		{
-			if (label[i*labelWidth + j] > 0)
-			{
-				if (object[label[i*labelWidth + j] - 1].checking)
-					continue;
-				else
-				{
-					object[label[i*labelWidth + j] - 1].height++;
-					object[label[i*labelWidth + j] - 1].checking = true;
-				}
-			}
-		}
-
-		for (int k = 0; k < blackObjectN; k++)
-			if (object[k].checking) object[k].checking = false;
-	}
-
-	for (int k = 0; k < blackObjectN; k++)
-	{
-		object[k].centerX /= object[k].count;
-		object[k].centerY /= object[k].count;
-
-		if (object[k].count > 2)
-		{
-			int maxLenght = max(object[k].height, object[k].width);
-			int minLenght = min(object[k].height, object[k].width);
-			if (maxLenght < minLenght*2)
-			{
-				object[k].isDeleted = true;
-			}
+			printf("(%d : %d)\n", k, histograrm);
 		}
 	}
 }
@@ -282,14 +255,11 @@ void main(void)
 {
 	/* Setting */
 	Mat image = imread("test1.jpg");
+	Mat trafficLightTemplate = imread("TrafficLight.jpg");
 	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
 	Mat topHatImage(image.rows, image.cols, CV_8UC1);
 	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
-	Mat cannyImage(image.rows, image.cols, CV_8UC1);
-	Mat findBlackImage(image.rows, image.cols, CV_8UC1, Scalar(0));
-	Mat blackObjectImage(image.rows, image.cols, CV_8UC1, Scalar(0));
 	Mat temp(image.rows, image.cols, CV_8UC1, Scalar(0));
-
 
 	int *label = new int[image.cols*image.rows];
 	labelWidth = image.cols;
@@ -317,90 +287,30 @@ void main(void)
 	removeDifferColorCandidate(image, object);
 
 
-
-
-
-	for (int i = 0; i < image.rows; i++)
+	for (int k = 0; k < objectN; k++)
 	{
-		for (int j = 0; j < image.cols; j++)
+		if (!object[k].isDeleted)
 		{
-			if (i>image.rows / 3 * 2)
+			for (int i = 0; i < image.cols; i++)
 			{
-				findBlackImage.at<uchar>(i, j) = 0;
-				continue;
-			}
-
-			if (j<image.cols / 10 || j>image.cols / 10 * 9)
-			{
-				findBlackImage.at<uchar>(i, j) = 0;
-				continue;
-			}
-
-			int blue = image.at<Vec3b>(i,j)[0];
-			int green = image.at<Vec3b>(i, j)[1];
-			int red = image.at<Vec3b>(i, j)[2];
-
-			double distanceBlack = calcDistance(blue, green, red, 0, 0, 0);
-
-			if (distanceBlack < DISTANCE_REJECT_CANDIDATE_WITH_COLOR)
-			{
-				if (abs(blue - green) < 30 && abs(green - red) < 30 && abs(blue - red) < 30)
+				for (int j = 0; j < image.rows; j++)
 				{
-					findBlackImage.at<uchar>(i, j) = 255;
+					if (label[j*image.cols + i] == k + 1)
+					{
+						temp.at<uchar>(j, i) = 255;
+					}
 				}
-				else
-				{
-					findBlackImage.at<uchar>(i, j) = 0;
-				}
-			}
-			else
-			{
-				findBlackImage.at<uchar>(i, j) = 0;
 			}
 		}
+
 	}
 
 
-	//int* label2 = new int[image.cols*image.rows];
-	//for (int i = 0; i < image.cols*image.rows; i++) label2[i] = 0;
-
-	//blackObjectN = find_components(findBlackImage, label2);
-	//Object* blackObject = new Object[objectN];
-	//checkArea2(blackObject, thresholdedImage, image, label2);
-
-	//for (int k = 0; k < blackObjectN; k++)
-	//{
-	//	if (blackObject[k].count < 4)
-	//	{
-	//		blackObject[k].isDeleted = true;
-	//	}
-
-	//	if (blackObject[k].count >= labelWidth * labelHeight * 0.04)
-	//	{
-	//		blackObject[k].isDeleted = true;
-	//	}
-	//}
-
-	//for (int k = 0; k < blackObjectN; k++)
-	//{
-	//	for (int i = 0; i < image.rows; i++)
-	//	{
-	//		for (int j = 0; j < image.cols; j++)
-	//		{
-	//			if (!blackObject[k].isDeleted)
-	//			{
-	//				if (label2[i*image.cols + j] == k + 1)
-	//				{
-	//					blackObjectImage.at<uchar>(i, j) = 255;
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
+	checkBoundaryBox(image, object, trafficLightTemplate);
 
 	imshow("image", image);
-	imshow("findBlackImage", findBlackImage);
+	imshow("trafficlight", trafficLightTemplate);
+	imshow("temp", temp);
 	waitKey(0);
 
 	delete[] label;
