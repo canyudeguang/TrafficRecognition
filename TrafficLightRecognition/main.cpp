@@ -1,14 +1,15 @@
 #include <opencv\cv.h>
 #include <opencv\highgui.h>
+#include <stack>
 
 using namespace cv;
+using namespace std;
 
-#define THRESHOLD_LIGHT 100
+#define THRESHOLD_LIGHT 80
 #define THRESHOLD_BOX 70
 #define TOP_HAT_SIZE 3
-#define DISTANCE_WITH_LIGHT 60
+#define DISTANCE_WITH_LIGHT 50
 #define DISTANCE_REJECT_CANDIDATE_WITH_COLOR 100
-
 
 int morph_size = TOP_HAT_SIZE;
 Mat element_tophat = getStructuringElement(MORPH_RECT, Size(2 * morph_size + 1, 2 * morph_size + 1), Point(morph_size, morph_size));
@@ -34,14 +35,6 @@ public:
 //Labeling Direction
 const int dx[] = { +1, 0, -1, 0 };
 const int dy[] = { 0, +1, 0, -1 };
-
-
-
-/* 색깔끼리의 거리(유사도)를 체크하는 함수(유클리드 Norm사용) */
-double calcDistance(int b1, int g1, int r1, int b2, int g2, int r2)
-{
-	return sqrt((b1 - b2)*(b1 - b2) + (g1 - g2)*(g1 - g2) + (r1 - r2)*(r1 - r2));
-}
 
 /* recursive로 구현된 Labeing함수 */
 void labeling(int x, int y,int current_label, Mat& sourceImage, int label[]) {
@@ -71,9 +64,9 @@ void labeling(int x, int y,int current_label, Mat& sourceImage, int label[]) {
 /* Object를 Reject하기위해 넓이와 높이 계산하는 함수 */
 void checkArea(Object object[], Mat& src, Mat& original, int label[])
 {
-	for (int i = labelWidth / 10-1; i < labelWidth / 10 * 9+1; i++)
+	for (int i = labelWidth / 10 -1; i < labelWidth / 10 * 9 +1; i++)
 	{
-		for (int j = 0; j < labelHeight / 3 * 2+1; j++)
+		for (int j = 0; j < labelHeight / 3 * 2 +1; j++)
 		{
 			if (label[j*labelWidth + i] > 0)
 			{
@@ -94,9 +87,9 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 			if(object[k].checking) object[k].checking = false;
 	}
 
-	for (int i = 0; i < labelHeight / 3 * 2+1; i++)
+	for (int i = 0; i < labelHeight / 3 * 2 +1; i++)
 	{
-		for (int j = labelWidth / 10 - 1; j < labelWidth / 10 * 9 + 1; j++)
+		for (int j = labelWidth / 10 +1; j < labelWidth / 10 * 9 +1 ; j++)
 		{
 			if (label[i*labelWidth + j] > 0)
 			{
@@ -118,15 +111,27 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 	{
 		object[k].centerX /= object[k].count;
 		object[k].centerY /= object[k].count;
-		
-		if (object[k].count > 2)
+
+		int height = object[k].height;
+		int width = object[k].width;
+
+		int maxLenght = max(height, width);
+		int minLenght = min(height, width);
+		double dimentionRatio = (double)maxLenght / (double)minLenght;
+		if (dimentionRatio > 1.2)
 		{
-			int maxLenght = max(object[k].height, object[k].width);
-			if (!(maxLenght * maxLenght >= object[k].count && 0.5890485 * maxLenght * maxLenght <= object[k].count))
-			{
-				object[k].isDeleted = true;
-			}
+			object[k].isDeleted = true;
 		}
+		if (height * width > 300 || height * width < 16)
+		{
+			object[k].isDeleted = true;
+		}
+		double fillingRatio = (double)object[k].count / height * width;
+		if (fillingRatio > 0.7)
+		{
+			object[k].isDeleted;
+		}
+
 	}
 }
 
@@ -151,6 +156,8 @@ int find_components(Mat& sourceImage, int label[]) {
 /* 화면 바깥쪽의 잡티를 제거하고 신호등이 될수있는 색을 밝게 해주는 함수 */
 void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 {
+	Mat source;
+	cvtColor(src, source, CV_RGB2HSV);
 	for (int i = 0; i < dst.rows; i++)
 	{
 		for (int j = 0; j < dst.cols; j++)
@@ -166,87 +173,145 @@ void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 				dst.at<uchar>(i, j) = 0;
 				continue;
 			}
-
-			int blue = src.at<Vec3b>(i, j)[0];
-			int green = src.at<Vec3b>(i, j)[1];
-			int red = src.at<Vec3b>(i, j)[2];
-
-			double distanceYello = calcDistance(blue, green, red, 100, 220, 255);
-			double distanceGreen = calcDistance(blue, green, red, 143, 250, 77);
-			double distanceRed = calcDistance(blue, green, red, 250, 190, 76);
-			
-			if (tophatImage.at<uchar>(i, j) > 30)
-			{
-				if (distanceYello < DISTANCE_WITH_LIGHT || distanceGreen < DISTANCE_WITH_LIGHT || distanceRed < DISTANCE_WITH_LIGHT)
-				{
-					dst.at<uchar>(i, j) = 255;
-				}
-				else if (distanceYello < DISTANCE_WITH_LIGHT + 30 || distanceGreen < DISTANCE_WITH_LIGHT + 30 || distanceRed < DISTANCE_WITH_LIGHT + 30)
-				{
-					dst.at<uchar>(i, j) += 80;
-				}
-				else if (distanceYello < DISTANCE_WITH_LIGHT + 60 || distanceGreen < DISTANCE_WITH_LIGHT + 60 || distanceRed < DISTANCE_WITH_LIGHT + 60)
-				{
-					dst.at<uchar>(i, j) += 50;
-				}
-			}
-
 		}
+
 	}
 }
 
-/* 후보들에서 색깔을 읽어서 빨,주,노와 거리가 멀면 거르는 함수 */
-void removeDifferColorCandidate(Mat& image, Object object[])
+int regionGrowing(int x, int y, Mat& grayScaleImage, Mat& labelImage, int preSize, int count)
 {
-	for (int k = 0; k < objectN; k++)
+	if (x < 1 || x > grayScaleImage.cols - 2)
 	{
-		int blue = image.at<Vec3b>(object[k].centerY, object[k].centerX)[0];
-		int green = image.at<Vec3b>(object[k].centerY, object[k].centerX)[1];
-		int red = image.at<Vec3b>(object[k].centerY, object[k].centerX)[2];
+		return 0;
+	}
+	if (y < 1 || y > grayScaleImage.rows - 2)
+	{
+		return 0;
+	}
 
-		double distanceYello = calcDistance(blue, green, red, 100, 220, 255);
-		double distanceGreen = calcDistance(blue, green, red, 143, 250, 77);
-		double distanceRed = calcDistance(blue, green, red, 250, 190, 76);
-
-		if (distanceYello > DISTANCE_REJECT_CANDIDATE_WITH_COLOR && distanceGreen > DISTANCE_REJECT_CANDIDATE_WITH_COLOR && distanceRed > DISTANCE_REJECT_CANDIDATE_WITH_COLOR)
+	int addGrowing = 0;
+	
+	for (int direction = 0; direction < 4; ++direction)
+	{
+		if (labelImage.at<uchar>(y + dy[direction], x + dx[direction]) == 0 && abs(grayScaleImage.at<uchar>(y + dy[direction], x + dx[direction]) - grayScaleImage.at<uchar>(y,x)) < 50)
 		{
-			object[k].isDeleted = true;
+			labelImage.at<uchar>(y + dy[direction], x + dx[direction]) = 255;
+			count++;
+			if (count > preSize * 1.5)
+			{
+				break;
+			}
+			addGrowing += (regionGrowing(x + dx[direction], y + dy[direction], grayScaleImage, labelImage, preSize, count) + 1);
 		}
 	}
+
+	return addGrowing;
 }
 
-void checkBoundaryBox(Mat& image, Object object[], Mat& trafficLightTemplate)
+void checkRegion(Mat& grayScaleImage, Object object[])
 {
-	Mat tempTemplate = trafficLightTemplate;
-	int histograrm = 0;
-	float scaleWithTemplate;
+	Mat labelImage(grayScaleImage.rows, grayScaleImage.cols, CV_8UC1, Scalar(0));
 	for (int k = 0; k < objectN; k++)
 	{
 		if (!object[k].isDeleted)
 		{
-			histograrm = 0;
-			scaleWithTemplate = (float)object[k].height*1.5 / trafficLightTemplate.rows;
-			resize(trafficLightTemplate, tempTemplate, Size(scaleWithTemplate * trafficLightTemplate.cols, scaleWithTemplate * trafficLightTemplate.rows));
-			imshow("tempWindow",tempTemplate);
-			for (int x = 0, i = object[k].centerX - (object[k].width * 0.75); x < trafficLightTemplate.cols; i++, x++)
+			int count = 0;
+			labelImage.at<uchar>(object[k].centerY, object[k].centerY) = 255;
+			int componentSize = regionGrowing(object[k].centerX, object[k].centerY, grayScaleImage, labelImage, object[k].count, count);
+			labelImage = Scalar(0);
+
+			if (componentSize > object[k].count * 1.5)
 			{
-				if (i < 0) continue;
-				if (i >= image.cols - 1) continue;
-				for (int y = 0, j = object[k].centerY - (object[k].height * 0.75); y < trafficLightTemplate.rows; j++,y++)
+				object[k].isDeleted = true;
+			}
+		}
+	}
+}
+
+void erosion(Mat& image)
+{
+	Mat temp(image.rows, image.cols, CV_8UC1, Scalar(0));
+
+	for (int i = 1; i < image.rows - 1; i++)
+	{
+		for (int j = 1; j < image.cols - 1; j++)
+		{
+			if (image.at<uchar>(i, j) == 255)
+			{
+				if (image.at<uchar>(i - 1, j) != 255)
 				{
-					if (j < 0) continue;
-					if (j >= image.rows - 1) continue;
-					int b1 = image.at<Vec3b>(j, i)[0];
-					int g1 = image.at<Vec3b>(j, i)[1];
-					int r1 = image.at<Vec3b>(j, i)[2];
-					int b2 = trafficLightTemplate.at<Vec3b>(y, x)[0];
-					int g2 = trafficLightTemplate.at<Vec3b>(y, x)[1];
-					int r2 = trafficLightTemplate.at<Vec3b>(y, x)[2];
-					double distance = calcDistance(b1,g1,r1,b2,g2,r2);
-					histograrm += (distance * distance);
+					continue;
+				}
+				if (image.at<uchar>(i + 1, j) != 255)
+				{
+					continue;
+				}
+				if (image.at<uchar>(i, j - 1) != 255)
+				{
+					continue;
+				}
+				if (image.at<uchar>(i, j + 1) != 255)
+				{
+					continue;
+				}
+				temp.at<uchar>(i, j) = 255;
+			}
+		}
+	}
+
+	temp.copyTo(image);
+}
+
+void dilation(Mat& image)
+{
+	Mat temp(image.rows, image.cols, CV_8UC1, Scalar(0));
+
+	for (int i = 1; i < image.rows - 1; i++)
+	{
+		for (int j = 1; j < image.cols - 1; j++)
+		{
+			if (image.at<uchar>(i, j) == 255)
+			{
+				temp.at<uchar>(i, j) = 255;
+				temp.at<uchar>(i - 1, j) = 255;
+				temp.at<uchar>(i + 1, j) = 255;
+				temp.at<uchar>(i, j - 1) = 255;
+				temp.at<uchar>(i, j + 1) = 255;
+			}
+		}
+	}
+	temp.copyTo(image);
+}
+
+void opening(Mat& image)
+{
+	erosion(image);
+	dilation(image);
+}
+
+void closing(Mat& image)
+{
+	dilation(image);
+	erosion(image);
+}
+
+void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat& redLightTemplate)
+{
+	Mat tempTemplate;
+
+	for (int k = 0; k < objectN; k++)
+	{
+		if (!object[k].isDeleted)
+		{
+			
+
+			for (int i = 0; i < image.cols; i++)
+			{
+				for (int j = 0; j < image.rows; j++)
+				{
+
 				}
 			}
-			printf("(%d : %d)\n", k, histograrm);
 		}
 	}
 }
@@ -255,7 +320,8 @@ void main(void)
 {
 	/* Setting */
 	Mat image = imread("test1.jpg");
-	Mat trafficLightTemplate = imread("TrafficLight.jpg");
+	Mat greenLightTemplate = imread("GreenLight,jpg");
+	Mat redLightTemplate = imread("RedLight,jpg");
 	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
 	Mat topHatImage(image.rows, image.cols, CV_8UC1);
 	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
@@ -264,7 +330,8 @@ void main(void)
 	int *label = new int[image.cols*image.rows];
 	labelWidth = image.cols;
 	labelHeight = image.rows;
-	for (int i = 0; i < image.cols*image.rows; i++) label[i] = 0;
+
+	for (int i = 0; i < image.cols*image.rows; i++)	label[i] = 0;
 
 	/* GrayScale */
 	cvtColor(image, grayScaleImage, CV_BGR2GRAY);
@@ -275,45 +342,47 @@ void main(void)
 	/* Make Spot Bright and extra color black */
 	makeWhite(topHatImage, image, topHatImage);
 
-	/* Thresholding */
-	threshold(topHatImage, thresholdedImage, THRESHOLD_LIGHT, 256, CV_THRESH_BINARY);
-	
+	threshold(topHatImage, thresholdedImage, THRESHOLD_LIGHT, 255, THRESH_BINARY);
+	opening(thresholdedImage);
+	closing(thresholdedImage);
+
 	/* First Filter(Area) */
 	objectN = find_components(thresholdedImage, label);
 	Object* object = new Object[objectN];
 	checkArea(object, thresholdedImage, image, label);
 
-	/* Second Filter(Color) */
-	removeDifferColorCandidate(image, object);
+	/* regionGrowing */
+	checkRegion(grayScaleImage, object);
 
+	/* Template Matching */
+	templateMatching(image, object);
 
 	for (int k = 0; k < objectN; k++)
 	{
 		if (!object[k].isDeleted)
 		{
-			for (int i = 0; i < image.cols; i++)
+			for (int i = 0; i < image.rows; i++)
 			{
-				for (int j = 0; j < image.rows; j++)
+				for (int j = 0; j < image.cols; j++)
 				{
-					if (label[j*image.cols + i] == k + 1)
-					{
-						temp.at<uchar>(j, i) = 255;
-					}
+					if(label[i*image.cols + j] == k+1)
+						temp.at<uchar>(i, j) = 255;
 				}
 			}
 		}
-
 	}
-
-
-	checkBoundaryBox(image, object, trafficLightTemplate);
-
+	
 	imshow("image", image);
-	imshow("trafficlight", trafficLightTemplate);
+	imshow("topHatImage", topHatImage);
+	imshow("grayScaleImage", grayScaleImage);
+	imshow("thresholdedImage", thresholdedImage);
 	imshow("temp", temp);
 	waitKey(0);
 
 	delete[] label;
 	delete[] object;
 }
+
+
+
 
