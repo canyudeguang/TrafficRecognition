@@ -6,10 +6,10 @@ using namespace cv;
 using namespace std;
 
 #define THRESHOLD_LIGHT 80
-#define THRESHOLD_BOX 70
 #define TOP_HAT_SIZE 3
 #define DISTANCE_WITH_LIGHT 50
-#define DISTANCE_REJECT_CANDIDATE_WITH_COLOR 100
+
+enum LightColor {Nothing, Red, Green};
 
 int morph_size = TOP_HAT_SIZE;
 Mat element_tophat = getStructuringElement(MORPH_RECT, Size(2 * morph_size + 1, 2 * morph_size + 1), Point(morph_size, morph_size));
@@ -18,6 +18,8 @@ int labelWidth;
 int labelHeight;
 int objectN = 0;
 int blackObjectN = 0;
+
+LightColor lightColor = LightColor::Nothing;
 
 struct Object
 {
@@ -297,21 +299,97 @@ void closing(Mat& image)
 
 void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat& redLightTemplate)
 {
-	Mat tempTemplate;
-
+	Mat tempTemplate(greenLightTemplate.rows, greenLightTemplate.cols,CV_8UC3);
+	LightColor tempLightColor = LightColor::Nothing;
 	for (int k = 0; k < objectN; k++)
 	{
 		if (!object[k].isDeleted)
 		{
-			
+			/* 색깔로 파란불인지 빨간불인지 인식 */
+			int b = image.at<Vec3b>(object[k].centerY, object[k].centerX)[0];
+			int g = image.at<Vec3b>(object[k].centerY, object[k].centerX)[1];
+			int r = image.at<Vec3b>(object[k].centerY, object[k].centerX)[2];
 
-			for (int i = 0; i < image.cols; i++)
+			int i = 0;
+			int j = 0;
+
+			double distanceWithGreen = sqrt((b - 180)*(b - 180) + (g - 180)*(g - 180) + (r - 150)*(r - 150));
+			double distanceWithRed = sqrt((b - 240)*(b - 240) + (g - 230)*(g - 230) + (r - 255)*(r - 255));
+
+			Scalar color;
+
+			if (distanceWithGreen > distanceWithRed)
 			{
-				for (int j = 0; j < image.rows; j++)
-				{
+				color = Scalar(228, 223, 230);
+				tempLightColor = LightColor::Red;
+				redLightTemplate.copyTo(tempTemplate);
+			}
+			else
+			{
+				color = Scalar(205, 209, 149);
+				tempLightColor = LightColor::Green;
+				greenLightTemplate.copyTo(tempTemplate);
+			}
+			
+			/* 템플릿 제작 */
+			double componentRatio = (double)(object[k].width * 1.2)/tempTemplate.cols;
+			resize(tempTemplate, tempTemplate, Size(), componentRatio, componentRatio, INTER_CUBIC);
 
+			if (tempLightColor == LightColor::Red)
+			{
+				i = object[k].centerX - object[k].width * 0.6;
+				j = object[k].centerY - object[k].height * 0.6;
+			}
+			else
+			{
+				i = object[k].centerX - object[k].width * 0.6;
+				j = object[k].centerY - tempTemplate.rows + object[k].height * 0.6;
+			}
+
+			if (i < 0 || i + tempTemplate.cols > image.cols - 1)
+			{
+				object[k].isDeleted = true;
+				break;
+			}
+			
+			if (j < 0 || j + tempTemplate.rows > image.rows - 1)
+			{
+				object[k].isDeleted = true;
+				break;
+			}
+
+			int count = 0;
+			int colorDistance = 0;
+
+			/* 매칭 */
+			for (int x = 0; x < tempTemplate.cols; x++)
+			{
+				for (int y = 0; y < tempTemplate.rows; y++)
+				{
+					colorDistance = sqrt((image.at<Vec3b>(j + y, i + x)[0] - tempTemplate.at<Vec3b>(y, x)[0])*(image.at<Vec3b>(j + y, i + x)[0] - tempTemplate.at<Vec3b>(y, x)[0]) +
+						(image.at<Vec3b>(j + y, i + x)[1] - tempTemplate.at<Vec3b>(y, x)[1])*(image.at<Vec3b>(j + y, i + x)[1] - tempTemplate.at<Vec3b>(y, x)[1]) +
+						(image.at<Vec3b>(j + y, i + x)[2] - tempTemplate.at<Vec3b>(y, x)[2])*(image.at<Vec3b>(j + y, i + x)[2] - tempTemplate.at<Vec3b>(y, x)[2]));
+					
+					if (colorDistance < DISTANCE_WITH_LIGHT)
+					{
+						count++;
+					}
 				}
 			}
+
+			if ((double)count / (tempTemplate.cols * tempTemplate.rows) > 0.5)
+			{
+				lightColor = tempLightColor;
+			}
+			else
+			{
+				object[k].isDeleted = true;
+			}
+
+			line(image, Point(object[k].centerX, object[k].centerY), Point(50, 50), color, 2);
+			circle(image, Point(50, 50), 30, color, -1, 8);
+			circle(image, Point(50, 50), 30, Scalar(0,0,0), 2, 8);
+
 		}
 	}
 }
@@ -319,9 +397,9 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 void main(void)
 {
 	/* Setting */
-	Mat image = imread("test1.jpg");
-	Mat greenLightTemplate = imread("GreenLight,jpg");
-	Mat redLightTemplate = imread("RedLight,jpg");
+	Mat image = imread("test2.jpg");
+	Mat greenLightTemplate = imread("GreenLight.jpg");
+	Mat redLightTemplate = imread("RedLight.jpg");
 	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
 	Mat topHatImage(image.rows, image.cols, CV_8UC1);
 	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
@@ -355,7 +433,7 @@ void main(void)
 	checkRegion(grayScaleImage, object);
 
 	/* Template Matching */
-	templateMatching(image, object);
+	templateMatching(image, object, greenLightTemplate, redLightTemplate);
 
 	for (int k = 0; k < objectN; k++)
 	{
@@ -373,10 +451,6 @@ void main(void)
 	}
 	
 	imshow("image", image);
-	imshow("topHatImage", topHatImage);
-	imshow("grayScaleImage", grayScaleImage);
-	imshow("thresholdedImage", thresholdedImage);
-	imshow("temp", temp);
 	waitKey(0);
 
 	delete[] label;
