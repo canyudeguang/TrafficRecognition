@@ -2,17 +2,27 @@
 #include <opencv\highgui.h>
 #include <stack>
 
+#pragma comment(lib, "라이브러리.lib")
+
 using namespace cv;
 using namespace std;
 
 #define THRESHOLD_LIGHT 80
 #define TOP_HAT_SIZE 3
+#define TOP_OPENING_SIZE 1
+#define TOP_CLOSING_SIZE 1
 #define DISTANCE_WITH_LIGHT 50
+#define VIDEO_WIDTH 640
+#define VIDEO_HEIGHT 480
 
 enum LightColor {Nothing, Red, Green};
 
 int morph_size = TOP_HAT_SIZE;
 Mat element_tophat = getStructuringElement(MORPH_RECT, Size(2 * morph_size + 1, 2 * morph_size + 1), Point(morph_size, morph_size));
+int open_size = TOP_OPENING_SIZE;
+Mat element_openhat = getStructuringElement(MORPH_RECT, Size(2 * open_size + 1, 2 * open_size + 1), Point(open_size, open_size));
+int close_size = TOP_CLOSING_SIZE;
+Mat element_closehat = getStructuringElement(MORPH_RECT, Size(2 * close_size + 1, 2 * close_size + 1), Point(close_size, close_size));
 
 int labelWidth;
 int labelHeight;
@@ -64,7 +74,7 @@ void labeling(int x, int y,int current_label, Mat& sourceImage, int label[]) {
 }
 
 /* Object를 Reject하기위해 넓이와 높이 계산하는 함수 */
-void checkArea(Object object[], Mat& src, Mat& original, int label[])
+void checkArea(Object object[], Mat& src, int label[])
 {
 	for (int i = labelWidth / 10 -1; i < labelWidth / 10 * 9 +1; i++)
 	{
@@ -89,6 +99,7 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 			if(object[k].checking) object[k].checking = false;
 	}
 
+	
 	for (int i = 0; i < labelHeight / 3 * 2 +1; i++)
 	{
 		for (int j = labelWidth / 10 +1; j < labelWidth / 10 * 9 +1 ; j++)
@@ -108,7 +119,7 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 		for (int k = 0; k < objectN; k++)
 			if (object[k].checking) object[k].checking = false;
 	}
-
+	
 	for (int k = 0; k < objectN; k++)
 	{
 		object[k].centerX /= object[k].count;
@@ -133,7 +144,6 @@ void checkArea(Object object[], Mat& src, Mat& original, int label[])
 		{
 			object[k].isDeleted;
 		}
-
 	}
 }
 
@@ -158,8 +168,6 @@ int find_components(Mat& sourceImage, int label[]) {
 /* 화면 바깥쪽의 잡티를 제거하고 신호등이 될수있는 색을 밝게 해주는 함수 */
 void makeWhite(Mat& dst, Mat& src,Mat& tophatImage)
 {
-	Mat source;
-	cvtColor(src, source, CV_RGB2HSV);
 	for (int i = 0; i < dst.rows; i++)
 	{
 		for (int j = 0; j < dst.cols; j++)
@@ -394,67 +402,84 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 	}
 }
 
-void main(void)
+int main(void)
 {
 	/* Setting */
-	Mat image = imread("test2.jpg");
+	VideoCapture cap("test.avi"); // open the video file for reading
+	Mat frame;
 	Mat greenLightTemplate = imread("GreenLight.jpg");
 	Mat redLightTemplate = imread("RedLight.jpg");
-	Mat grayScaleImage(image.rows, image.cols, CV_8UC1);
-	Mat topHatImage(image.rows, image.cols, CV_8UC1);
-	Mat thresholdedImage(image.rows, image.cols, CV_8UC1);
-	Mat temp(image.rows, image.cols, CV_8UC1, Scalar(0));
+	Mat grayScaleImage(VIDEO_HEIGHT, VIDEO_WIDTH, CV_8UC1);
+	Mat topHatImage(VIDEO_HEIGHT, VIDEO_WIDTH, CV_8UC1);
+	Mat thresholdedImage(VIDEO_HEIGHT, VIDEO_WIDTH, CV_8UC1);
+	Object* object;
+	int frameNumber = 0;
+	int *label = new int[VIDEO_HEIGHT * VIDEO_WIDTH];
+	labelWidth = VIDEO_WIDTH;
+	labelHeight = VIDEO_HEIGHT;
 
-	int *label = new int[image.cols*image.rows];
-	labelWidth = image.cols;
-	labelHeight = image.rows;
+	for (int i = 0; i < VIDEO_HEIGHT * VIDEO_WIDTH; i++)	label[i] = 0;
 
-	for (int i = 0; i < image.cols*image.rows; i++)	label[i] = 0;
-
-	/* GrayScale */
-	cvtColor(image, grayScaleImage, CV_BGR2GRAY);
-
-	/* White Top Hat */
-	morphologyEx(grayScaleImage, topHatImage, CV_MOP_TOPHAT, element_tophat);
-
-	/* Make Spot Bright and extra color black */
-	makeWhite(topHatImage, image, topHatImage);
-
-	threshold(topHatImage, thresholdedImage, THRESHOLD_LIGHT, 255, THRESH_BINARY);
-	opening(thresholdedImage);
-	closing(thresholdedImage);
-
-	/* First Filter(Area) */
-	objectN = find_components(thresholdedImage, label);
-	Object* object = new Object[objectN];
-	checkArea(object, thresholdedImage, image, label);
-
-	/* regionGrowing */
-	checkRegion(grayScaleImage, object);
-
-	/* Template Matching */
-	templateMatching(image, object, greenLightTemplate, redLightTemplate);
-
-	for (int k = 0; k < objectN; k++)
+	if (!cap.isOpened())  // if not success, exit program
 	{
-		if (!object[k].isDeleted)
+		cout << "Cannot open the video file" << endl;
+		delete[] label;
+
+		return -1;
+	}
+
+	namedWindow("MyVideo", CV_WINDOW_AUTOSIZE); //create a window called "MyVideo"
+
+	while (1)
+	{
+		/*if (frameNumber == 1)
 		{
-			for (int i = 0; i < image.rows; i++)
-			{
-				for (int j = 0; j < image.cols; j++)
-				{
-					if(label[i*image.cols + j] == k+1)
-						temp.at<uchar>(i, j) = 255;
-				}
-			}
+			frameNumber = 0;
+			continue;
+		}*/
+
+		bool bSuccess = cap.read(frame); // read a new frame from video
+
+		if (!bSuccess) //if not success, break loop
+		{
+			cout << "Cannot read the frame from video file" << endl;
+			break;
+		}
+
+		cvtColor(frame, grayScaleImage, CV_BGR2GRAY);
+
+		morphologyEx(grayScaleImage, topHatImage, CV_MOP_TOPHAT, element_tophat);
+
+		makeWhite(topHatImage, frame, topHatImage);
+
+		threshold(topHatImage, thresholdedImage, THRESHOLD_LIGHT, 255, THRESH_BINARY);
+		//opening(thresholdedImage);
+		//closing(thresholdedImage);
+		//morphologyEx(grayScaleImage, topHatImage, CV_MOP_OPEN, element_openhat);
+		//morphologyEx(grayScaleImage, topHatImage, CV_MOP_CLOSE, element_closehat);
+
+		objectN = find_components(thresholdedImage, label);
+		object = new Object[objectN];
+		checkArea(object, thresholdedImage, label);
+
+		checkRegion(grayScaleImage, object);
+		
+		templateMatching(frame, object, greenLightTemplate, redLightTemplate);
+
+		imshow("MyVideo", frame); //show the frame in "MyVideo" window
+		delete[] object;
+		for (int i = 0; i < VIDEO_HEIGHT * VIDEO_WIDTH; i++)	label[i] = 0;
+
+		if (waitKey(30) == 27) //wait for 'esc' key press for 30 ms. If 'esc' key is pressed, break loop
+		{
+			cout << "esc key is pressed by user" << endl;
+			break;
 		}
 	}
-	
-	imshow("image", image);
-	waitKey(0);
 
 	delete[] label;
-	delete[] object;
+
+	return 0;
 }
 
 
