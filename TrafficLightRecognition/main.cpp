@@ -308,6 +308,7 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 {
 	Mat tempTemplate(greenLightTemplate.rows, greenLightTemplate.cols, CV_8UC3);
 	LightColor tempLightColor = LightColor::Nothing;
+
 	for (int k = 0; k < objectN; k++)
 	{
 		if (!object[k].isDeleted)
@@ -317,15 +318,13 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 			int g = image.at<Vec3b>(object[k].centerY, object[k].centerX)[1];
 			int r = image.at<Vec3b>(object[k].centerY, object[k].centerX)[2];
 
-			int i = 0;
-			int j = 0;
-
 			double distanceWithGreen = sqrt((b - 180)*(b - 180) + (g - 180)*(g - 180) + (r - 150)*(r - 150));
 			double distanceWithRed = sqrt((b - 240)*(b - 240) + (g - 230)*(g - 230) + (r - 255)*(r - 255));
-
+			
 			Scalar color;
 
-			if (distanceWithGreen > distanceWithRed)
+
+			if (distanceWithRed < distanceWithGreen)
 			{
 				color = Scalar(228, 223, 230);
 				tempLightColor = LightColor::Red;
@@ -342,15 +341,18 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 			double componentRatio = (double)(object[k].width*1.2) / tempTemplate.cols;
 			resize(tempTemplate, tempTemplate, Size(), componentRatio, componentRatio, INTER_CUBIC);
 
+			int i = 0;
+			int j = 0;
+
 			if (tempLightColor == LightColor::Red)
 			{
-				i = object[k].centerX - object[k].width;
-				j = object[k].centerY - object[k].height;
+				i = object[k].centerX - object[k].width * 1.3;
+				j = object[k].centerY - object[k].height * 1.3;
 			}
 			else
 			{
-				i = object[k].centerX - object[k].width;
-				j = object[k].centerY - tempTemplate.rows * 1.3;
+				i = object[k].centerX - object[k].width * 1.3;
+				j = object[k].centerY - tempTemplate.rows;
 			}
 
 			if (i < 0 || i + tempTemplate.cols >= image.cols - 1)
@@ -367,19 +369,19 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 
 			double min, max;
 			Point leftTop;
-			Mat crop = image(Rect(i, j, tempTemplate.cols * 1.3 + object[k].width * 2, tempTemplate.rows * 1.3 + object[k].height * 2));
-			line(image, Point(i, j), Point(i, j + tempTemplate.rows * 1.3 + object[k].height * 1.5), color, 2);
-			line(image, Point(i, j), Point(i + tempTemplate.cols * 1.3 + object[k].width * 1.5, j), color, 2);
-			line(image, Point(i + tempTemplate.cols * 1.3 + object[k].width * 1.5, j), Point(i + tempTemplate.cols * 1.3 + object[k].width * 1.5, j + tempTemplate.rows * 1.3 + object[k].height * 1.5), color, 2);
-			line(image, Point(i, j + tempTemplate.rows * 1.3 + object[k].height * 1.5), Point(i + tempTemplate.cols * 1.3 + object[k].width * 1.5, j + tempTemplate.rows * 1.3 + object[k].height * 1.5), color, 2);
+			Mat crop = image(Rect(i, j, tempTemplate.cols * 1.5 + object[k].width * 2, tempTemplate.rows * 1.5 + object[k].height * 2));
+			line(image, Point(i, j), Point(i, j + tempTemplate.rows * 1.5 + object[k].height * 2), color, 2);
+			line(image, Point(i, j), Point(i + tempTemplate.cols * 1.5 + object[k].width * 2, j), color, 2);
+			line(image, Point(i + tempTemplate.cols * 1.5 + object[k].width * 2, j), Point(i + tempTemplate.cols * 1.5 + object[k].width * 2, j + tempTemplate.rows * 1.5 + object[k].height * 2), color, 2);
+			line(image, Point(i, j + tempTemplate.rows * 1.5 + object[k].height * 2), Point(i + tempTemplate.cols * 1.5 + object[k].width * 2, j + tempTemplate.rows * 1.5 + object[k].height * 2), color, 2);
 
 			Mat result(crop.rows, crop.cols, CV_32FC1);
 			matchTemplate(crop, tempTemplate, result, CV_TM_CCOEFF_NORMED);
 			minMaxLoc(result, &min, &max, NULL, &leftTop);
 
-			if (max > 0.7f)
+			
+			if (max > 0.8f)
 			{
-				cout << max << endl;
 				lightColor = tempLightColor;
 				circle(image, Point(50, 50), 30, color, -1, 8);
 				line(image, Point(50, 50), Point(object[k].centerX, object[k].centerY), color, 2);
@@ -467,94 +469,3 @@ int main(void)
 
 
 
-
-
-//
-//Mat tempTemplate(greenLightTemplate.rows, greenLightTemplate.cols, CV_8UC3);
-//LightColor tempLightColor = LightColor::Nothing;
-//for (int k = 0; k < objectN; k++)
-//{
-//	if (!object[k].isDeleted)
-//	{
-//		/* 색깔로 파란불인지 빨간불인지 인식 */
-//		int b = image.at<Vec3b>(object[k].centerY, object[k].centerX)[0];
-//		int g = image.at<Vec3b>(object[k].centerY, object[k].centerX)[1];
-//		int r = image.at<Vec3b>(object[k].centerY, object[k].centerX)[2];
-//
-//		int i = 0;
-//		int j = 0;
-//
-//		double distanceWithGreen = sqrt((b - 180)*(b - 180) + (g - 180)*(g - 180) + (r - 150)*(r - 150));
-//		double distanceWithRed = sqrt((b - 240)*(b - 240) + (g - 230)*(g - 230) + (r - 255)*(r - 255));
-//
-//		Scalar color;
-//
-//		if (distanceWithGreen > distanceWithRed)
-//		{
-//			color = Scalar(228, 223, 230);
-//			tempLightColor = LightColor::Red;
-//			redLightTemplate.copyTo(tempTemplate);
-//		}
-//		else
-//		{
-//			color = Scalar(205, 209, 149);
-//			tempLightColor = LightColor::Green;
-//			greenLightTemplate.copyTo(tempTemplate);
-//		}
-//
-//		/* 템플릿 제작 */
-//		double componentRatio = (double)(object[k].width * 1.2) / tempTemplate.cols;
-//		resize(tempTemplate, tempTemplate, Size(), componentRatio, componentRatio, INTER_CUBIC);
-//
-//		if (tempLightColor == LightColor::Red)
-//		{
-//			i = object[k].centerX - object[k].width * 0.6;
-//			j = object[k].centerY - object[k].height * 0.6;
-//		}
-//		else
-//		{
-//			i = object[k].centerX - object[k].width * 0.6;
-//			j = object[k].centerY - tempTemplate.rows + object[k].height * 0.6;
-//		}
-//
-//		if (i < 0 || i + tempTemplate.cols > image.cols - 1)
-//		{
-//			object[k].isDeleted = true;
-//			break;
-//		}
-//
-//		if (j < 0 || j + tempTemplate.rows > image.rows - 1)
-//		{
-//			object[k].isDeleted = true;
-//			break;
-//		}
-//
-//		int count = 0;
-//		int colorDistance = 0;
-//
-//		/* 매칭 */
-//		for (int x = 0; x < tempTemplate.cols; x++)
-//		{
-//			for (int y = 0; y < tempTemplate.rows; y++)
-//			{
-//				colorDistance = sqrt((image.at<Vec3b>(j + y, i + x)[0] - tempTemplate.at<Vec3b>(y, x)[0])*(image.at<Vec3b>(j + y, i + x)[0] - tempTemplate.at<Vec3b>(y, x)[0]) +
-//					(image.at<Vec3b>(j + y, i + x)[1] - tempTemplate.at<Vec3b>(y, x)[1])*(image.at<Vec3b>(j + y, i + x)[1] - tempTemplate.at<Vec3b>(y, x)[1]) +
-//					(image.at<Vec3b>(j + y, i + x)[2] - tempTemplate.at<Vec3b>(y, x)[2])*(image.at<Vec3b>(j + y, i + x)[2] - tempTemplate.at<Vec3b>(y, x)[2]));
-//
-//				if (colorDistance < DISTANCE_WITH_LIGHT)
-//				{
-//					count++;
-//				}
-//			}
-//		}
-//
-//		if ((double)count / (tempTemplate.cols * tempTemplate.rows) > 0.5)
-//		{
-//			lightColor = tempLightColor;
-//		}
-//		else
-//		{
-//			object[k].isDeleted = true;
-//		}
-//	}
-//}
