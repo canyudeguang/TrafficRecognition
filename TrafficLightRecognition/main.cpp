@@ -395,7 +395,9 @@ void templateMatching(Mat& image, Object object[], Mat& greenLightTemplate, Mat&
 int main(void)
 {
 	/* Setting */
-	VideoCapture cap("test.avi"); // open the video file for reading
+	VideoCapture cap("test.avi"); // open the video file for readin
+	Size frameSize(static_cast<int>(VIDEO_WIDTH), static_cast<int>(VIDEO_HEIGHT));
+	VideoWriter result("result.avi", CV_FOURCC('M', 'P', 'E', 'G'), 20, frameSize, true);
 	Mat frame;
 	Mat greenLightTemplate = imread("GreenLight.jpg");
 	Mat redLightTemplate = imread("RedLight.jpg");
@@ -409,6 +411,12 @@ int main(void)
 	labelHeight = VIDEO_HEIGHT;
 
 	for (int i = 0; i < VIDEO_HEIGHT * VIDEO_WIDTH; i++)	label[i] = 0;
+	
+	if (!result.isOpened()) //if not initialize the VideoWriter successfully, exit the program
+	{
+		cout << "ERROR: Failed to write the video" << endl;
+		return -1;
+	}
 
 	if (!cap.isOpened())  // if not success, exit program
 	{
@@ -450,6 +458,7 @@ int main(void)
 		checkRegion(grayScaleImage, object);
 		
 		templateMatching(frame, object, greenLightTemplate, redLightTemplate);
+		result.write(frame);
 		imshow("frame.jpg", frame); //show the frame in "MyVideo" window
 
 		for (int i = 0; i < VIDEO_HEIGHT * VIDEO_WIDTH; i++)	label[i] = 0;
